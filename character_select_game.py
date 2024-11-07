@@ -1,6 +1,85 @@
 import random
+import time
+import threading
 
-# Guilty Gear Strive Combat System
+# Get current time (for time window comparisons)
+def get_current_time():
+    """ Returns the current time in seconds (for time window comparisons) """
+    return time.time()
+
+# Function to handle input with timeout using threading
+def timed_input(prompt, timeout=1.0):
+    """ Returns player input or None if timeout occurs """
+    print(prompt, end='', flush=True)
+
+    # This function will store the input in a global variable
+    input_received = [None]
+
+    def get_input():
+        input_received[0] = input().strip().lower()
+
+    # Start the input thread
+    input_thread = threading.Thread(target=get_input)
+    input_thread.start()
+
+    # Wait for the input or timeout
+    start_time = time.time()
+    while input_received[0] is None:
+        if time.time() - start_time >= timeout:
+            return None  # Timeout after the specified duration
+        time.sleep(0.01)
+
+    input_thread.join()
+    return input_received[0]
+
+def generate_random_combo(length=10):
+    """ Generates a random combo sequence of length `length` with W, A, S, D inputs """
+    return [random.choice(["w", "a", "s", "d"]) for _ in range(length)]
+
+def perform_timed_combo(combo_sequence, time_limit=1.0):
+    """ Checks if the player performs a combo within the time limit using W, A, S, D """
+    start_time = get_current_time()  # Start the timer when the combo begins
+    combo_index = 0  # Track where we are in the combo sequence
+    combo_bonus = 1  # Default combo bonus multiplier (1x damage)
+    
+    print("\nCombo sequence started! You have 1 second to complete each move!")
+
+    for action in combo_sequence:
+        print(f"Waiting for input: {action}...")
+
+        while True:
+            current_time = get_current_time()  # Get current time
+            elapsed_time = current_time - start_time  # Time elapsed since the last input
+
+            if elapsed_time > time_limit:  # Timeout if too much time passes
+                print(f"Combo input timed out! You took too long.")
+                return 0.4  # Changed from 0.7 to 0.4 (40% damage if combo fails)
+            
+            # Try to get player input
+            player_input = timed_input(f"Press {action} (W/A/S/D): ", time_limit)
+
+            if player_input is None:  # Timeout if no input
+                print(f"Combo input timed out!")
+                return 0.4  # Changed from 0.7 to 0.4 (40% damage if combo fails)
+
+            # If player input is correct, break the loop and move to next combo step
+            if player_input == action:
+                print(f"Correct! {action} executed.")
+                combo_index += 1
+                start_time = get_current_time()  # Reset the timer for the next move
+                break
+            else:
+                print(f"Incorrect input! Try again.")
+    
+    # Successfully completed the combo within the time limit
+    print("\nCombo completed! Bonus damage applied.")
+    combo_bonus = 1.2  # Combo multiplier for the final move (1.2x damage for completing combo)
+    return combo_bonus
+
+def calculate_damage(base_damage, combo_bonus):
+    """ Calculates damage with combo bonus """
+    final_damage = base_damage * combo_bonus
+    return final_damage
 
 def display_intro():
     print("Welcome to the Guilty Gear Strive Combat System!")
@@ -66,129 +145,118 @@ def choose_action():
     action = input("What will you do? (1/2/3/4): ")
     return action
 
-def calculate_special_damage(character_name, strength, special_move):
-    # Calculate damage based on character's strength and specific special move
+def cpu_choose_action():
+    """CPU chooses an action randomly, but ensures it always picks something"""
+    return random.choice(["1", "2", "3", "4"])
+
+def special_move_message(character, special_move, damage):
     if special_move == "Bandit Bringer":
-        damage = strength * 1.6  # Sol Badguy's special is a powerful charge
+        print(f"\n{character} roars and unleashes a massive {special_move}, sending shockwaves through the arena!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Sacred Edge":
-        damage = strength * 1.4  # Ky Kiske's sacred sword slash
+        print(f"\n{character} raises his sword high and slashes with a divine {special_move}, cutting through the air!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Dolphin Dive":
-        damage = strength * 1.3  # May's dolphin move benefits from agility
+        print(f"\n{character} summons a playful dolphin and leaps into the air, crashing down with a devastating {special_move}!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Ninja Teleport":
-        damage = strength * 1.2  # Chip's teleport strike, lower damage but fast
+        print(f"\n{character} disappears in a puff of smoke and reappears behind the opponent, landing a quick {special_move}!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Stroke of Midnight":
-        damage = strength * 1.5  # I-No's time-altering guitar move
+        print(f"\n{character} strums their guitar, sending a shockwave through time with {special_move}!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Minion Summon":
-        damage = strength * 1.2  # Jack-O's minions deal less damage directly
+        print(f"\n{character} summons a horde of minions to overwhelm the opponent with {special_move}!")
+        print(f"The attack deals {damage} damage to the opponent!")
     elif special_move == "Chaos Bullet":
-        damage = strength * 1.8  # Happy Chaos's chaotic bullet is devastating
-    else:
-        damage = strength * 1.3  # Default special damage for unknown moves
-    return damage
+        print(f"\n{character} channels chaotic energy and fires a devastating {special_move}, ripping through reality itself!")
+        print(f"The attack deals {damage} damage to the opponent!")
 
 def fight_opponent(player_strength, player_health, player_name, special_move, special_cooldown, player_agility, opponent_name, opponent_strength, opponent_health, opponent_agility):
-    # Track cooldowns
-    player_special_cooldown = 0  # Player's special cooldown
-    opponent_special_cooldown = 0  # Opponent's special cooldown
-    shield_active = False  # Whether the player is currently shielding
+    shield_active = False
+    opponent_shield_active = False
+    turns_left_on_special_cooldown = 0
+    combo_sequence = generate_random_combo()
+    combo_bonus = 1
 
     while player_health > 0 and opponent_health > 0:
-        # Handle cooldowns
-        if player_special_cooldown > 0:
-            print(f"\n{player_name}'s special move is on cooldown for {player_special_cooldown} more turns.")
-            player_special_cooldown -= 1
-
-        if opponent_special_cooldown > 0:
-            print(f"\n{opponent_name}'s special move is on cooldown for {opponent_special_cooldown} more turns.")
-            opponent_special_cooldown -= 1
-
+        # Player chooses their action
         action = choose_action()
-        opponent_action = random.choice(["1", "2", "3", "4"])
+        
+        # CPU chooses its action
+        opponent_action = cpu_choose_action()  # Get the opponent's action
 
-        # Player's action
-        if action == "1":
+        # First, handle the player's action:
+        if action == "1":  # Player Attack
             print(f"\n{player_name} attacks {opponent_name}!")
-            if can_dodge(opponent_agility):
-                print(f"{opponent_name} dodges the attack!")
-            else:
-                if opponent_action == "2":
-                    # Opponent shields
-                    print(f"{opponent_name} is shielding!")
-                    damage = max(0, player_strength * 0.03)  # Shield reduces damage to 3%
-                    opponent_health -= damage
-                    print(f"{opponent_name} takes {damage} damage after shield!")
-                else:
-                    damage = max(0, player_strength - opponent_strength // 2)
-                    opponent_health -= damage
-                    print(f"{opponent_name} takes {damage} damage!")
-        
-        elif action == "2":
-            print(f"\n{player_name} shields!")
+            combo_sequence = generate_random_combo()
+            combo_bonus = perform_timed_combo(combo_sequence)  # Perform combo check
+            damage = calculate_damage(player_strength, combo_bonus)
+
+            # If the opponent shields, apply the shield effect here first
+            if opponent_shield_active:
+                damage *= 0.2  # Opponent takes 20% of damage if shielded
+                print(f"{opponent_name} is shielding! Damage reduced.")
+            opponent_health -= damage
+            print(f"{opponent_name} takes {damage} damage from the attack!")
+
+        elif action == "2":  # Player Shield
+            print(f"{player_name} shields!")
             shield_active = True
-
-        elif action == "3":
-            if player_special_cooldown == 0:
-                print(f"\n{player_name} uses {special_move}!")
-
-                # Calculate special damage based on character's strength and special move
-                special_damage = calculate_special_damage(player_name, player_strength, special_move)
+        elif action == "3":  # Player Special Move
+            if turns_left_on_special_cooldown == 0:
+                print(f"{player_name} uses {special_move}!")
+                special_damage = player_strength * 1.5
+                if opponent_shield_active:
+                    special_damage *= 0.2  # Reduce special damage if opponent shields
+                    print(f"{opponent_name} is shielding! Special damage reduced.")
                 opponent_health -= special_damage
-                print(f"{opponent_name} takes {special_damage} damage from {special_move}!")
-                player_special_cooldown = special_cooldown
+                special_move_message(player_name, special_move, special_damage)
+                turns_left_on_special_cooldown = special_cooldown
             else:
-                print(f"\n{player_name}'s special move is still on cooldown!")
-
-        elif action == "4":
-            print(f"\n{player_name} attempts a grab on {opponent_name}!")
-            grab_damage = player_strength * 0.4  # Reduced grab damage to 40%
+                print(f"{player_name}'s special move is still on cooldown for {turns_left_on_special_cooldown} more turns.")
+        
+        elif action == "4":  # Player Grab
+            print(f"{player_name} attempts a grab on {opponent_name}!")
+            grab_damage = player_strength * 0.4
             opponent_health -= grab_damage
-            print(f"{opponent_name} takes {grab_damage} damage from the grab (bypasses shield)!")
+            print(f"{opponent_name} takes {grab_damage} damage from the grab!")
 
-        else:
-            print("\nInvalid action. Please choose 1, 2, 3, or 4.")
-            continue
-
-        # Opponent's action
-        if opponent_action == "1":
+        # Now handle the opponent's action:
+        if opponent_action == "1":  # Opponent Attack
             print(f"\n{opponent_name} attacks {player_name}!")
-            if can_dodge(player_agility):
-                print(f"{player_name} dodges the attack!")
-            else:
-                if shield_active:
-                    # Player shields
-                    damage = max(0, opponent_strength * 0.03)  # Shield reduces damage to 3%
-                    player_health -= damage
-                    print(f"{player_name} takes {damage} damage after shield!")
-                else:
-                    damage = max(0, opponent_strength - player_strength // 2)
-                    player_health -= damage
-                    print(f"{player_name} takes {damage} damage!")
-        
-        elif opponent_action == "2":
+            damage = opponent_strength
+            # If the player shields, apply the shield effect here first
+            if shield_active:
+                damage *= 0.2  # Player takes 20% damage if shielded
+                print(f"{player_name} is shielding! Damage reduced.")
+            player_health -= damage
+            print(f"{player_name} takes {damage} damage from the opponent's attack!")
+
+        elif opponent_action == "2":  # Opponent Shield
             print(f"{opponent_name} shields!")
-        
-        elif opponent_action == "3":
-            if opponent_special_cooldown == 0:
-                # Calculate opponent's special damage
-                special_damage = calculate_special_damage(opponent_name, opponent_strength, special_move)
-                player_health -= special_damage
-                print(f"{opponent_name} uses their special move and deals {special_damage} damage to {player_name}!")
-                opponent_special_cooldown = 3
-            else:
-                print(f"{opponent_name}'s special move is still on cooldown!")
+            opponent_shield_active = True
 
-        elif opponent_action == "4":
-            grab_damage = opponent_strength * 0.4  # Reduced grab damage to 40%
+        elif opponent_action == "3":  # Opponent Special Move
+            print(f"{opponent_name} uses a special move!")
+            special_damage = opponent_strength * 1.5
+            if shield_active:
+                special_damage *= 0.2  # Reduce special damage if player shields
+                print(f"{player_name} is shielding! Special damage reduced.")
+            player_health -= special_damage
+            print(f"{player_name} takes {special_damage} damage from {opponent_name}'s special move!")
+
+        elif opponent_action == "4":  # Opponent Grab
+            print(f"{opponent_name} attempts a grab on {player_name}!")
+            grab_damage = opponent_strength * 0.4
             player_health -= grab_damage
-            print(f"{player_name} takes {grab_damage} damage from the grab (bypasses shield)!")
+            print(f"{player_name} takes {grab_damage} damage from the grab!")
 
-        # End turn updates
-        shield_active = False  # Reset shield at the end of the turn
-
-        # Show health after each turn
+        # Show health after each turn:
         print(f"\n{player_name}'s Health: {player_health}")
         print(f"{opponent_name}'s Health: {opponent_health}\n")
 
+        # Check for the end of the battle
         if player_health <= 0:
             print(f"\n{player_name} has been defeated by {opponent_name}!")
             break
@@ -196,18 +264,19 @@ def fight_opponent(player_strength, player_health, player_name, special_move, sp
             print(f"\n{opponent_name} has been defeated by {player_name}!")
             break
 
+        # Reset shields for the next round
+        shield_active = False
+        opponent_shield_active = False
+
+
 def main():
     display_intro()
-    
-    # Choose your fighter
     show_character_options()
     player_choice = get_character_choice()
     player_name, player_strength, player_health, special_move, special_cooldown, player_agility = get_character_attributes(player_choice)
 
-    # Display player info
     display_character_info(player_name, player_strength, player_health, special_move, special_cooldown, player_agility)
 
-    # Battle Loop (vs CPU)
     opponents = [
         ("Sol Badguy", 18, 120, 8),
         ("Ky Kiske", 14, 100, 7),
@@ -221,9 +290,7 @@ def main():
 
     print(f"\nYour opponent is {opponent_name}!\n")
 
-    # Start the battle
     fight_opponent(player_strength, player_health, player_name, special_move, special_cooldown, player_agility, opponent_name, opponent_strength, opponent_health, opponent_agility)
 
 if __name__ == "__main__":
     main()
-
